@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>plexus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  /* The palette is the user's own sketch: graphite canvas, red nodes, cyan edges, a violet cluster loop. */
+  :root {
+    --graphite: #262626;
+    --card: #303030;
+    --card-edge: #3d3d3d;
+    --chalk: #ece8e1;
+    --dim: #9a958d;
+    --node: #e5322d;
+    --edge: #14a9cc;
+    --cluster: #8a35b5;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1600px; height: 900px; background: var(--graphite); overflow: hidden; }
+  body { font-family: 'Bricolage Grotesque', sans-serif; color: var(--chalk); position: relative; }
+
+  .copy { position: absolute; left: 96px; top: 104px; width: 600px; }
+  .copy h1 { font-size: 132px; font-weight: 800; letter-spacing: -0.045em; line-height: 0.9; }
+  .copy .lede { margin-top: 26px; font-size: 40px; font-weight: 600; line-height: 1.12; letter-spacing: -0.015em; }
+  .copy ul { list-style: none; padding: 0; margin-top: 52px; display: grid; gap: 20px; }
+  .copy li { font-size: 28px; line-height: 1.25; color: var(--chalk); padding-left: 38px; position: relative; }
+  .copy li::before {
+    content: ''; position: absolute; left: 4px; top: 11px; width: 13px; height: 13px;
+    border-radius: 50%; background: var(--node); box-shadow: 0 0 0 4px rgba(229,50,45,.18);
+  }
+  .copy .close { margin-top: 52px; font-size: 26px; color: var(--dim); line-height: 1.35; }
+  .copy .close b { color: var(--chalk); font-weight: 600; }
+  .url { position: absolute; left: 96px; bottom: 64px; font-size: 22px; color: var(--dim); }
+  .url b { color: var(--chalk); font-weight: 600; }
+
+  /* A session: a plain Claude Code conversation, with the name its user gave it. */
+  .session {
+    position: absolute; width: 214px; height: 96px; border-radius: 12px;
+    background: var(--card); border: 1px solid var(--card-edge); padding: 14px 16px;
+  }
+  .session .name { font-size: 19px; font-weight: 600; color: var(--chalk); white-space: nowrap; }
+  .session .line { height: 7px; border-radius: 4px; background: #424242; margin-top: 12px; }
+  .session .line + .line { width: 62%; margin-top: 9px; }
+  .session.closed { background: transparent; border-style: dashed; border-color: #555; }
+  .session.closed .name { color: var(--dim); }
+
+  /* The node pinned to it: plexus's whole addition. */
+  .node { position: absolute; font-size: 22px; font-weight: 800; color: var(--node); letter-spacing: -0.01em; white-space: nowrap; }
+  .node small { font-size: 16px; font-weight: 600; color: var(--dim); margin-left: 6px; }
+
+  .msg {
+    position: absolute; font-family: 'JetBrains Mono', monospace; font-size: 15px; line-height: 1.45;
+    color: var(--chalk); background: #1d3a42; border: 1px solid #1f6f82; border-radius: 10px;
+    padding: 10px 13px; width: 300px;
+  }
+  .msg .who { color: #6fd3ea; }
+  .note { position: absolute; font-size: 17px; color: var(--dim); font-style: italic; white-space: nowrap; }
+
+  svg { position: absolute; inset: 0; width: 1600px; height: 900px; pointer-events: none; }
+</style>
+</head>
+<body>
+  <div class="copy">
+    <h1>plexus</h1>
+    <p class="lede">Your Claude Code sessions, arranged as a graph.</p>
+    <ul>
+      <li>Attach a node to any session.</li>
+      <li>Each session sees where it sits: parent, siblings, children.</li>
+      <li>Sessions message each other, even when one is closed.</li>
+    </ul>
+    <p class="close"><b>No projects, no containers.</b><br>The session stays the unit of work; the graph is one JSON file you shape however you like.</p>
+  </div>
+  <p class="url">Proof of concept, a Claude Code plugin. <b>github.com/franciscohermida/plexus</b></p>
+
+  <svg viewBox="0 0 1600 900" aria-hidden="true">
+    <defs>
+      <!-- A slight wobble so the graph reads as drawn over the sessions, like the sketch it came from. -->
+      <filter id="hand" x="-5%" y="-5%" width="110%" height="110%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.022" numOctaves="2" seed="7" result="n"/>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="5"/>
+      </filter>
+    </defs>
+
+    <!-- the play cluster -->
+    <path filter="url(#hand)" fill="none" stroke="var(--cluster)" stroke-width="4" stroke-linecap="round"
+      d="M 905 352 C 980 300, 1180 296, 1290 330 C 1405 366, 1452 520, 1430 640 C 1408 762, 1260 820, 1080 822 C 905 824, 812 760, 800 640 C 790 530, 820 410, 905 352 Z"/>
+
+    <g filter="url(#hand)" fill="none" stroke="var(--edge)" stroke-width="4" stroke-linecap="round">
+      <!-- nexus → play -->
+      <path d="M 1032 146 C 1010 230, 990 300, 968 404"/>
+      <!-- nexus → maintenance -->
+      <path d="M 1052 140 C 1170 146, 1280 168, 1334 194"/>
+      <!-- play → adventure -->
+      <path d="M 960 420 C 930 500, 900 560, 884 640"/>
+      <!-- play → phonics -->
+      <path d="M 975 416 C 1080 470, 1180 560, 1214 650"/>
+    </g>
+    <!-- topic link: the cluster reports to maintenance about tooling -->
+    <path filter="url(#hand)" fill="none" stroke="var(--edge)" stroke-width="3" stroke-dasharray="2 10" stroke-linecap="round"
+      d="M 1318 352 C 1340 320, 1370 290, 1400 258"/>
+
+    <!-- nodes, scribbled like the sketch -->
+    <g filter="url(#hand)" fill="none" stroke="var(--node)" stroke-width="3.5" stroke-linecap="round">
+      <g transform="translate(1040 140)"><ellipse rx="13" ry="11"/><ellipse rx="9" ry="12" transform="rotate(30)"/><circle r="5" fill="var(--node)"/></g>
+      <g transform="translate(966 410)"><ellipse rx="14" ry="11"/><ellipse rx="10" ry="13" transform="rotate(-25)"/><circle r="6" fill="var(--node)"/></g>
+      <g transform="translate(882 650)"><ellipse rx="12" ry="10"/><ellipse rx="8" ry="11" transform="rotate(40)"/><circle r="4" fill="var(--node)"/></g>
+      <g transform="translate(1218 660)"><ellipse rx="12" ry="11"/><ellipse rx="9" ry="11" transform="rotate(-35)"/><circle r="4" fill="var(--node)"/></g>
+      <g transform="translate(1340 198)"><ellipse rx="12" ry="10"/><ellipse rx="9" ry="12" transform="rotate(20)"/><circle r="4" fill="var(--node)"/></g>
+    </g>
+  </svg>
+
+  <!-- sessions, with the names their user gave them; the red label is the node pinned on -->
+  <div class="session" style="left:1052px; top:96px"><div class="name">my day</div><div class="line"></div><div class="line"></div></div>
+  <div class="node" style="left:1086px; top:62px">nexus</div>
+
+  <div class="session" style="left:978px; top:366px"><div class="name">games app</div><div class="line"></div><div class="line"></div></div>
+  <div class="node" style="left:1006px; top:332px">play <small>cluster head</small></div>
+
+  <div class="session" style="left:894px; top:606px"><div class="name">save format</div><div class="line"></div><div class="line"></div></div>
+  <div class="node" style="left:916px; top:572px">adventure</div>
+
+  <div class="session closed" style="left:1230px; top:616px"><div class="name">phonics audio</div><div class="line"></div><div class="line"></div></div>
+  <div class="node" style="left:1252px; top:582px">phonics</div>
+  <div class="note" style="left:1236px; top:724px">closed: mail waits, or wake it</div>
+
+  <div class="session" style="left:1346px; top:150px; width:200px"><div class="name">tooling</div><div class="line"></div><div class="line"></div></div>
+  <div class="node" style="left:1362px; top:116px">maintenance</div>
+
+  <div class="msg" style="left:1204px; top:404px; width:214px">
+    <span class="who">[plexus] from adventure<br>(your child)</span><br>Save format changed.
+  </div>
+</body>
+</html>

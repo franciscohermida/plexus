@@ -1,0 +1,13 @@
+{
+  "name": "plexus",
+  "owner": {
+    "name": "Francisco Hermida"
+  },
+  "plugins": [
+    {
+      "name": "plexus",
+      "source": "./"
+    }
+  ],
+  "description": "plexus: arrange Claude Code sessions into a graph."
+}

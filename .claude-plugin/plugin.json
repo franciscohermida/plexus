@@ -1,0 +1,17 @@
+{
+  "name": "plexus",
+  "version": "0.1.0",
+  "description": "Claude Code sessions as nodes of a graph you arrange: each session knows its parent, cluster head, children and siblings, and can message them.",
+  "author": {
+    "name": "Francisco Hermida"
+  },
+  "homepage": "https://github.com/franciscohermida/plexus",
+  "repository": "https://github.com/franciscohermida/plexus",
+  "license": "MIT",
+  "keywords": [
+    "sessions",
+    "graph",
+    "cross-session-messaging",
+    "mod"
+  ]
+}
