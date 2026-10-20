@@ -137,11 +137,57 @@ export function placeText(g: Graph, id: string): string {
   return lines.join('\n')
 }
 
+/** What a fork reads, while it holds no node, about where it came from. Stable, like `placeText`. */
+export function forkText(g: Graph, origin: string): string {
+  const parent = parentOf(g, origin)
+  return [
+    '# plexus: this session is a fork',
+    '',
+    `This conversation was forked from the session holding the node \`${origin}\` of the user's session graph (plexus). The \`[plexus]\` lines earlier in it describe that session, not this one: this fork holds no node, and what it sends goes out as an unbound session.`,
+    `The original is reachable as \`${origin}\` with \`mcp__plexus__send\`. Tell it what it would want to know from this fork's work, as a sibling would.`,
+    `If this fork becomes its own line of work, give it a node with \`mcp__plexus__node\` (action \`bind\`) once the user agrees on a name, usually as a sibling of \`${origin}\`${parent ? ` under \`${parent}\`` : ''}.`,
+  ].join('\n')
+}
+
 /**
  * Which session holds a node. `endedAt` is set when that session ended;
  * `released` when it moved to another node, so a resume doesn't take this one back.
  */
-export type Binding = { sessionId: string; boundAt: number; cwd?: string; endedAt?: number; released?: true }
+export type Binding = { sessionId: string; boundAt: number; cwd?: string; endedAt?: number; released?: true; movedTo?: string }
+
+/** `id` renamed `from` → `to`, and every path id beneath `from/` with it. */
+function renamed(id: string, from: string, to: string): string {
+  return id === from ? to : id.startsWith(`${from}/`) ? `${to}${id.slice(from.length)}` : id
+}
+
+/**
+ * The graph with node `from` renamed `to`: its entry, path ids beneath it,
+ * declared parents and links that name it. Returns the old → new id pairs.
+ */
+export function renameNode(g: Graph, from: string, to: string): { graph: Graph; moved: [string, string][] } {
+  const moved: [string, string][] = []
+  const nodes: Record<string, GraphNode> = {}
+  const implied = (id: string) => (id.lastIndexOf('/') > 0 ? id.slice(0, id.lastIndexOf('/')) : undefined)
+  for (const [id, node] of Object.entries(g.nodes)) {
+    const next = renamed(id, from, to)
+    if (next !== id) moved.push([id, next])
+    if (node.parent !== undefined) {
+      nodes[next] = { ...node, parent: node.parent && renamed(node.parent, from, to) }
+    } else {
+      // A parent the old path implied is kept, declared, when the new id implies another.
+      const before = implied(id)
+      const kept = before && renamed(before, from, to)
+      nodes[next] = kept && implied(next) !== kept ? { ...node, parent: kept } : node
+    }
+  }
+  if (!g.nodes[from]) moved.push([from, to])
+  const links = (g.links ?? []).map(l => ({
+    ...l,
+    from: l.from.endsWith('/*') ? `${renamed(l.from.slice(0, -2), from, to)}/*` : renamed(l.from, from, to),
+    to: renamed(l.to, from, to),
+  }))
+  return { graph: { ...g, nodes, links }, moved }
+}
 
 /**
  * The whole graph as an indented tree, with each node's session state.
@@ -149,14 +195,15 @@ export type Binding = { sessionId: string; boundAt: number; cwd?: string; endedA
  */
 export function treeText(g: Graph, bindings: Record<string, Binding>, self?: string, live?: Set<string>): string {
   const ids = nodeIds(g)
-  for (const b of Object.keys(bindings)) if (!ids.includes(b)) ids.push(b)
+  for (const [b, binding] of Object.entries(bindings)) if (!binding.movedTo && !ids.includes(b)) ids.push(b)
   const roots = ids.filter(n => parentOf(g, n) === undefined || !ids.includes(parentOf(g, n)!))
   const out: string[] = []
   const walk = (id: string, depth: number) => {
     const b = bindings[id]
     const isOpen = b && !b.endedAt && (live ? live.has(b.sessionId) : true)
     const state = !b ? 'no session' : isOpen ? 'session open' : 'session closed'
-    const marks = [g.nodes[id]?.head ? 'head' : '', state, id === self ? 'this session' : ''].filter(Boolean).join(', ')
+    const isLoose = depth === 0 && !ids.some(n => n !== id && parentOf(g, n) === id)
+    const marks = [isLoose ? 'loose' : '', g.nodes[id]?.head ? 'head' : '', state, id === self ? 'this session' : ''].filter(Boolean).join(', ')
     out.push(`${'  '.repeat(depth)}- ${id} (${marks})${g.nodes[id]?.brief ? `: ${g.nodes[id]?.brief}` : ''}`)
     for (const c of ids.filter(n => n !== id && parentOf(g, n) === id).sort()) walk(c, depth + 1)
   }

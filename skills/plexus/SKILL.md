@@ -21,9 +21,11 @@ Everything is plain JSON under `~/.claude/plexus/`: `graph.json` (the graph, rea
 ## Arranging the graph
 
 - **Create a node's session**: the user opens one in their editor and runs `/node <id>`, or, when the user asks, start one in the background from the project folder: `claude --bg "/node <id>"` (add `--name` only if the user wants one; plexus never names sessions). Background sessions show in the Desktop app and in `claude agents`, not in the VS Code extension. A background session waits silently on any startup dialog (folder trust, a project's new MCP server): start it in a folder the user already works in, and if `claude logs <id>` shows a dialog, ask the user to answer it with `claude attach <id>`.
-- **Bind**: `/node <id>` in the session itself. A session holds one node; binding again moves it.
+- **Bind**: the user's `/node <id>`, or `mcp__plexus__node` (action `bind`) when the user asks. A session holds one node; binding again moves it. A node with no parent is loose: just the session's name and purpose, findable in the graph.
 - **Move or describe**: edit `graph.json`: set `parent`, `head`, `brief`, or add a link. Prefer flat ids with a declared `parent`, so a move changes one field and the binding stays.
+- **Rename**: `mcp__plexus__node` (action `rename`); it updates the graph, bindings and waiting mail together. Hand edits to ids leave bindings and mail behind.
 - **Retire**: remove the node from `graph.json` and delete its `sessions/` file. Its transcript stays resumable.
+- **Forks**: a fork starts unbound and is told which node it came from. When it becomes its own line of work, bind it, usually as a sibling of that node.
 - **Show**: `mcp__plexus__graph`, or the user's `/graph`.
 
 Read `graph.json` before editing it and keep the user's briefs word for word; they are the user's.

@@ -1,5 +1,18 @@
 import type { EngineInterface, Register } from 'claude-code'
-import { type Binding, type Graph, isNodeId, parseGraph, emptyGraph, placeText, relation, treeText } from './graph.ts'
+import {
+  type Binding,
+  type Graph,
+  type GraphLink,
+  type GraphNode,
+  emptyGraph,
+  forkText,
+  isNodeId,
+  parseGraph,
+  placeText,
+  relation,
+  renameNode,
+  treeText,
+} from './graph.ts'
 
 // plexus: Claude Code sessions as nodes of a graph the user arranges.
 //
@@ -172,7 +185,48 @@ async function reconcile($: EngineInterface): Promise<void> {
       .sort(([, a], [, b]) => b.boundAt - a.boundAt)[0]
     if (mine) await writeBinding($, mine[0], { ...mine[1], endedAt: undefined })
   }
+  fork = undefined
+  forkScanned = false
   await deliverMail($)
+}
+
+/**
+ * The marker a bind leaves in the conversation. A fork copies the conversation
+ * under a new session id, so a marker naming another session tells the fork
+ * where it came from: Claude Code records no parent for a fork.
+ */
+const marker = (id: string, node: string) => `[plexus] This session (${id}) is now bound to the node \`${node}\`.`
+const MARKER = /\[plexus\] This session \(([\w-]+)\) is now bound to the node `([^`]+)`/
+
+let fork: { sessionId: string; node: string } | undefined // the session this one was forked from, while it holds no node
+let forkScanned = false // the conversation is read once per session id, once it has rows (at `session.start` a fork's are not loaded yet)
+
+async function scanForFork($: EngineInterface): Promise<void> {
+  if (forkScanned) return
+  const id = await sessionId($)
+  // The API form: the marker is a hidden row, which the plain rows leave out but the model reads.
+  const rows = await $.session.messages({ as: 'api' })
+  if (!Array.isArray(rows) || !rows.length) return
+  forkScanned = true
+  const textOf = (content: unknown) =>
+    typeof content === 'string'
+      ? content
+      : Array.isArray(content)
+        ? content.map(b => (b && typeof b === 'object' && 'text' in b ? String((b as { text: unknown }).text) : '')).join('\n')
+        : ''
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i]
+    const found = row?.role === 'user' ? MARKER.exec(textOf(row.content)) : null
+    if (found) {
+      fork = found[1] === id ? undefined : { sessionId: found[1]!, node: found[2]! }
+      return
+    }
+  }
+}
+
+async function leaveMarker($: EngineInterface, node: string): Promise<void> {
+  const text = marker(await sessionId($), node)
+  await $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } }).catch(() => undefined)
 }
 
 async function bind($: EngineInterface, node: string): Promise<void> {
@@ -191,6 +245,43 @@ async function bind($: EngineInterface, node: string): Promise<void> {
   }
   await writeBinding($, node, { sessionId: id, boundAt: Date.now(), cwd: await $.session.cwd() })
   await declareNode($, node)
+  await leaveMarker($, node)
+  fork = undefined
+}
+
+/**
+ * Renames node `from` to `to` everywhere: the graph (path ids beneath it
+ * follow), bindings, and waiting mail. The sessions holding them read their new
+ * place at their next turn.
+ */
+async function rename($: EngineInterface, from: string, to: string): Promise<string> {
+  if (!isNodeId(from) || !isNodeId(to)) return 'Both ids must be node ids: letters, digits, - _ . and / between levels.'
+  const path = `${await root($)}/graph.json`
+  let raw: { nodes?: Record<string, GraphNode>; links?: GraphLink[]; [key: string]: unknown } = { nodes: {}, links: [] }
+  if (await $.fs.exists(path)) {
+    try {
+      raw = JSON.parse(await $.fs.read(path))
+    } catch {
+      return `${path} doesn't parse; fix it before renaming.`
+    }
+  }
+  const bindings = await readBindings($)
+  const isKnown = (id: string) => Boolean(raw.nodes?.[id]) || Boolean(bindings[id] && !bindings[id]!.movedTo)
+  if (!isKnown(from)) return `There is no node \`${from}\`.`
+  if (isKnown(to)) return `\`${to}\` already exists; pick another id or retire it first.`
+  const { graph, moved } = renameNode({ nodes: raw.nodes ?? {}, links: raw.links ?? [] }, from, to)
+  await writeJson($, path, { ...raw, nodes: graph.nodes, links: graph.links })
+  for (const [old, next] of moved) {
+    const b = bindings[old]
+    if (b && !b.movedTo) {
+      await writeBinding($, next, b)
+      await writeBinding($, old, { ...b, endedAt: b.endedAt ?? Date.now(), released: true, movedTo: next })
+    }
+    const { mail, done } = await peekMail($, old)
+    for (const m of mail) await leaveMail($, next, m)
+    await done()
+  }
+  return `Renamed ${moved.map(([a, b]) => `\`${a}\` → \`${b}\``).join(', ')}.`
 }
 
 /** Hands this node's waiting mail to Claude as a turn of its own; recorded as delivered once the turn starts. */
@@ -294,6 +385,20 @@ export const register: Register = on => {
         required: ['node', 'reason'],
       },
     })
+    await $.tool.register({
+      name: 'node',
+      description:
+        "Bind this session to a plexus node, or rename a node, when the user asks. bind: this session takes the node (added to the graph if new; its parent and brief are set in graph.json). rename: renames node `from` to `node` everywhere: graph, bindings, waiting mail; path ids beneath it follow.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          action: { type: 'string', enum: ['bind', 'rename'] },
+          node: { type: 'string', description: 'bind: the node to take. rename: the new id.' },
+          from: { type: 'string', description: 'rename: the current id.' },
+        },
+        required: ['action', 'node'],
+      },
+    })
     await $.command.register({ name: 'node', description: 'Bind this session to a plexus node, or show its place', argumentHint: '[node id]' })
     await $.command.register({ name: 'graph', description: 'Show the plexus session graph' })
     await $.command.register({ name: 'wake', description: "Resume a closed plexus node's last session in the background", argumentHint: '<node id> [reason]' })
@@ -318,10 +423,29 @@ export const register: Register = on => {
     await reconcile($)
     const composed = await next(e)
     const node = await myNode($)
-    if (!node) return composed
-    const text = placeText(await readGraph($), node)
+    if (!node) await scanForFork($)
+    if (!node && !fork) return composed
+    const g = await readGraph($)
+    const text = node ? placeText(g, node) : forkText(g, fork!.node)
     return { sections: [...composed.sections, { id: 'plexus:place', text, scope: 'session' }] }
   })
+
+  // A compaction drops the bind marker from the conversation; put it back so a later fork still finds its origin.
+  on('session.compact', async ($, e, next) => {
+    const compacted = await next(e)
+    const node = await myNode($)
+    if (node && !('skip' in compacted && compacted.skip)) await leaveMarker($, node)
+    return compacted
+  })
+
+  on('tool.call', { tool: 'mcp__plexus__node' }, async ($, e) => {
+    const { action, node, from } = e as unknown as { action: string; node: string; from?: string }
+    if (action === 'rename') return { result: from ? await rename($, from, node) : 'rename needs `from`, the current id.' }
+    if (!isNodeId(node)) return { result: `"${node}" is not a node id: use letters, digits, - _ . and / between levels.` }
+    await bind($, node)
+    void deliverMail($)
+    return { result: `Bound this session to \`${node}\`.\n\n${placeText(await readGraph($), node)}` }
+  }).catch(($, e, next) => ({ result: `plexus failed: ${next.error?.message ?? 'unknown error'}` }))
 
   on('tool.call', { tool: 'mcp__plexus__send' }, async ($, e) => {
     const { to, text } = e as unknown as { to: string; text: string }

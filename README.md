@@ -42,6 +42,15 @@ unless you say otherwise.
 
 Requires Claude Code 2.1.287 or later, with sessions on the same machine.
 
+To use it as it is:
+
+```bash
+claude plugin install plexus --marketplace franciscohermida/plexus
+```
+
+To change it, install from your own clone instead. It then runs from that folder: edit the files,
+and `/reload-plugins` in the sessions that should run your version.
+
 ```bash
 git clone https://github.com/franciscohermida/plexus
 claude plugin marketplace add ./plexus
@@ -49,9 +58,6 @@ claude plugin install plexus@plexus
 ```
 
 New sessions load it on their own. A session that's already open picks it up with `/reload-plugins`.
-
-It runs from your clone, so it's yours to change: edit the files, then `/reload-plugins` in the
-sessions that should run your version.
 
 ## Try it
 
@@ -87,10 +93,22 @@ starting `[plexus] from adventure (your child)`, and can reply. Run `/graph` to 
 | `/graph` | The graph as a tree, with which nodes have a session open. |
 | `/wake <id>` | Resume a closed node's last session in the background, so it reads its mail. |
 
-Claude gets the tools `mcp__plexus__send` and `mcp__plexus__graph`, plus a `plexus` skill for
-creating, moving and retiring nodes, and for deciding when work deserves its own session.
-`mcp__plexus__wake` lets Claude wake nodes itself, but only if you add an allow rule for it:
-waking spends usage, so by default it asks you to run `/wake`.
+You rarely need more than `/node`: ask in plain words for the rest. "Set your brief to X", "put
+this under play", "rename adventure to quest" all work, through these tools and a `plexus` skill:
+
+| Tool | |
+| --- | --- |
+| `mcp__plexus__send` | Message a node: delivered live, or left in its mailbox. |
+| `mcp__plexus__graph` | Read the whole graph. |
+| `mcp__plexus__node` | Bind this session to a node, or rename a node everywhere (graph, bindings, waiting mail). |
+| `mcp__plexus__wake` | Wake a closed node. Waking spends usage, so it only runs if you add an allow rule for it; otherwise Claude asks you to run `/wake`. |
+
+**Forks.** A fork starts with no node, and knows it's a fork: it reads that it came from the
+session holding `adventure`, that it can message that session as a sibling would, and that it can
+take a node of its own once it becomes its own line of work.
+
+**Loose nodes.** A node doesn't have to sit in a tree. One with no parent and nothing beneath it is
+just a session's name and purpose, listed as loose in `/graph`, so other sessions can find it.
 
 ## The graph file
 

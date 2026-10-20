@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import { type Graph, childrenOf, headOf, isNodeId, linksFrom, parentOf, placeText, relation, siblingsOf } from '../hooks/graph.ts'
+import { type Graph, childrenOf, headOf, isNodeId, linksFrom, parentOf, placeText, relation, renameNode, siblingsOf, treeText } from '../hooks/graph.ts'
 
 const g: Graph = {
   nodes: {
@@ -52,6 +52,21 @@ test('node ids are levels of letters, digits and -_. with no level made of dots'
   expect(isNodeId('play/../x')).toBe(false)
   expect(isNodeId('a\\b')).toBe(false)
   expect(isNodeId('')).toBe(false)
+})
+
+test('a rename carries path children, declared parents and links, and keeps an implied parent', async () => {
+  const { graph, moved } = renameNode(g, 'play', 'games')
+  expect(moved).toEqual([['play', 'games'], ['play/adventure', 'games/adventure'], ['play/phonics', 'games/phonics']])
+  expect(parentOf(graph, 'games/adventure')).toBe('games')
+  expect(graph.links?.[0]?.from).toBe('games/*')
+  const flat = renameNode(g, 'play/adventure', 'adventure').graph
+  expect(parentOf(flat, 'adventure')).toBe('play')
+})
+
+test('a root with nothing beneath it is listed as loose', async () => {
+  const text = treeText({ nodes: { notme: { brief: 'Banter NotMe.' }, play: {}, 'play/adventure': {} } }, {})
+  expect(text).toContain('- notme (loose, no session)')
+  expect(text).toContain('- play (no session)')
 })
 
 test('a message names how the sender stands to the receiver', async () => {
