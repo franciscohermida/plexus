@@ -310,16 +310,41 @@ async function send($: EngineInterface, to: string, text: string): Promise<strin
   const rel = node ? relation(g, node, to) : 'a session outside the graph'
   const target = bindings[to]
 
+  const failures: string[] = []
   if (target && !target.endedAt) {
-    const sent = await $.session.send({ to: { sessionId: target.sessionId }, text: `[plexus] from \`${from}\` (${rel}) to \`${to}\`\n${text}` })
+    const framed = `[plexus] from \`${from}\` (${rel}) to \`${to}\`\n${text}`
+    const sent = await $.session.send({ to: { sessionId: target.sessionId }, text: framed })
     if (sent.isDelivered) return `Delivered to \`${to}\`'s open session.`
+    failures.push(`by session id: ${sent.reason}`)
+    // Some sessions are reachable only by the name ListAgents gives them; try that before mail.
+    const name = (await liveSessionNames($))?.get(target.sessionId)
+    if (name) {
+      const byName = await $.session.send({ to: name, text: framed }).catch(error => ({ isDelivered: false as const, reason: String(error) }))
+      if (byName.isDelivered) return `Delivered to \`${to}\`'s open session (as "${name}").`
+      failures.push(`by name "${name}": ${byName.reason}`)
+    }
   }
   await leaveMail($, to, { from, relation: rel, text, at: Date.now() })
+  if (failures.length) {
+    $.ui.log(`plexus: delivery to \`${to}\` failed (${failures.join('; ')}); left in its mailbox`)
+    return `\`${to}\`'s session looks open, but delivery failed (${failures.join('; ')}). The message is in its mailbox; tell the user, since the session won't read it until it rebinds or resumes.`
+  }
   $.ui.toast(`plexus: \`${to}\` has no open session; the message waits in its mailbox`)
   const next = target
     ? ` If it can't wait, the user can wake it with \`/wake ${to}\` (its last session resumes in the background and reads the mail).`
     : ` No session has held \`${to}\` yet; the user can open one and run \`/node ${to}\` there.`
   return `\`${to}\` has no open session, so the message is waiting in its mailbox; the next session bound to \`${to}\` reads it.${next}`
+}
+
+/** The names `claude agents` lists for running sessions, by session id. */
+async function liveSessionNames($: EngineInterface): Promise<Map<string, string> | undefined> {
+  try {
+    const ran = await $.process.run(['claude', 'agents', '--json'], { timeoutMs: 15_000 })
+    if (ran.exitCode !== 0) return undefined
+    return new Map((JSON.parse(ran.stdout) as { sessionId?: string; name?: string }[]).flatMap(s => (s.sessionId && s.name ? [[s.sessionId, s.name] as [string, string]] : [])))
+  } catch {
+    return undefined
+  }
 }
 
 /**
